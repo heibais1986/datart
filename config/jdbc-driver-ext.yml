@@ -46,4 +46,11 @@ STARROCKS:
   adapter-class: "datart.data.provider.jdbc.adapters.StarRocksDataProviderAdapter"
   url-prefix: "jdbc:mysql://"
 
-
+DM:
+  db-type: "DM"
+  name: "DM"
+  driver-class: "dm.jdbc.driver.DmDriver"
+  literal-quote: "'"
+  identifier-quote: "`"
+  adapter-class: "datart.data.provider.jdbc.adapters.DmDataProviderAdapter"
+  url-prefix: "jdbc:dm://"
