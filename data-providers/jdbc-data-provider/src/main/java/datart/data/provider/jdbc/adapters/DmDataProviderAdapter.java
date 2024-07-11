@@ -16,8 +16,98 @@
  * limitations under the License.
  */
 
+
+package datart.data.provider.jdbc.adapters;
+
+
+import datart.core.base.PageInfo;
+import datart.core.data.provider.Column;
+import datart.core.data.provider.Dataframe;
+import datart.core.data.provider.ExecuteParam;
+import datart.core.data.provider.QueryScript;
+import datart.data.provider.jdbc.SqlScriptRender;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
+
+import java.sql.Connection;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.*;
+
+@Slf4j
 package datart.data.provider.jdbc.adapters;
 
 public class DmDataProviderAdapter extends JdbcDataProviderAdapter {
+
+    private static final String PAGE_SQL = "SELECT * FROM (SELECT ROWNUM V_R_N,V_T0.* FROM (%s) V_T0 WHERE ROWNUM <= %d) WHERE V_R_N>%d";
+
+    @Override
+    protected String readCurrDatabase(Connection conn, boolean isCatalog) throws SQLException {
+        String user = jdbcProperties.getUser();
+        if (StringUtils.endsWithIgnoreCase(user, " AS SYSDBA")
+                || StringUtils.endsWithIgnoreCase(user, " AS SYSOPER")) {
+            return null;
+        }
+        return super.readCurrDatabase(conn, isCatalog);
+    }
+
+    @Override
+    protected Dataframe parseResultSet(ResultSet rs, long count) throws SQLException {
+        Dataframe dataframe = new Dataframe();
+        List<Column> columns = getColumns(rs);
+        int start = 1;
+        if ("V_R_N".equals(columns.get(0).columnKey())) {
+            start = 2;
+            columns.remove(0);
+        }
+        ArrayList<List<Object>> rows = new ArrayList<>();
+        int c = 0;
+        while (rs.next()) {
+            ArrayList<Object> row = new ArrayList<>();
+            rows.add(row);
+            for (int i = start; i < columns.size() + start; i++) {
+                row.add(getObjFromResultSet(rs, i));
+            }
+            c++;
+            if (c >= count) {
+                break;
+            }
+        }
+        dataframe.setColumns(columns);
+        dataframe.setRows(rows);
+        return dataframe;
+    }
+
+    @Override
+    public Dataframe executeOnSource(QueryScript script, ExecuteParam executeParam) throws Exception {
+
+        SqlScriptRender render = new SqlScriptRender(script
+                , executeParam
+                , getSqlDialect());
+
+        String sql = render.render(true, false, false);
+
+        String wrappedSql = pageWrapper(sql, executeParam.getPageInfo());
+
+        log.debug(wrappedSql);
+
+        Dataframe dataframe = execute(wrappedSql);
+        // fix page info
+        if (executeParam.getPageInfo().isCountTotal()) {
+            int total = executeCountSql(render.render(true, false, true));
+            executeParam.getPageInfo().setTotal(total);
+            dataframe.setPageInfo(executeParam.getPageInfo());
+        }
+        dataframe.setScript(wrappedSql);
+        return dataframe;
+    }
+
+    private String pageWrapper(String sql, PageInfo pageInfo) {
+        return String.format(PAGE_SQL,
+                sql,
+                (pageInfo.getPageNo()) * pageInfo.getPageSize(),
+                (pageInfo.getPageNo() - 1) * pageInfo.getPageSize());
+    }
+
 
 }
